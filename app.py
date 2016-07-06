@@ -1,11 +1,41 @@
-from flask import Flask
+from flask import request
 from flask import Response
 from flask import json
 import sqlite3
 from flask import g
 import json
+from flask import Flask, jsonify
+from werkzeug.exceptions import default_exceptions
+from werkzeug.exceptions import HTTPException
 
-app = Flask(__name__)
+__all__ = ['make_json_app']
+
+def make_json_app(import_name, **kwargs):
+	"""
+	Creates a JSON-oriented Flask app.
+
+	All error responses that you don't specifically
+	manage yourself will have application/json content
+	type, and will contain JSON like this (just an example):
+
+	{ "message": "405: Method Not Allowed" }
+	"""
+	def make_json_error(ex):
+		response = jsonify(message=str(ex))
+		response.status_code = (ex.code
+					if isinstance(ex, HTTPException)
+					else 500)
+		return response
+
+	app = Flask(import_name, **kwargs)
+
+	for code in default_exceptions.iterkeys():
+		app.error_handler_spec[None][code] = make_json_error
+
+	return app
+
+#app = Flask(__name__)
+app = make_json_app(__name__)
 
 DATABASE = "/usr/data/test.db"
 
@@ -27,26 +57,30 @@ def close_connection(exception):
 	if db is not None:
 		db.close()
 
-def selectSpatialDataChange_Range(start, end):
-	ret = []
-	querystring = "select * from SPATIAL_DATACHANGE where julianday(logtime) between julianday('2011-01-01') and julianday('now')"
-	for datapoint in query_db(querystring):
-		d = {}
-		d['primary_key'] = datapoint[0]
-		d['logtime'] = datapoint[1]
-		d['serialnumber'] = datapoint[2]
-		d['idx'] = datapoint[3]
-		d['acceleration_x'] = datapoint[4]
-		d['acceleration_y'] = datapoint[5]
-		d['acceleration_z'] = datapoint[6]
-		d['angularrate_x'] = datapoint[7]
-		d['angularrate_y'] = datapoint[8]
-		d['angularrate_z'] = datapoint[9]
-		d['magneticfield_x'] = datapoint[10]
-		d['magneticfield_y'] = datapoint[11]
-		d['magneticfield_z'] = datapoint[12]
-		ret.append(json.dumps(d))
-	return ret
+@app.errorhandler(404)
+def not_found(error=None):
+	message = {
+		'status': 404,
+		'message': 'Not Found: ' + request.url,
+	}
+	resp = jsonify(message)
+	resp.status_code = 404
+
+	return resp
+
+def selectUntilNow(table, 
+		year_from, month_from, day_from, hour_from, minute_from, second_from):
+	string_from = "%s-%s-%s %s:%s:%s" % (year_from, month_from, day_from, hour_from, minute_from, second_from)
+	querystring = "SELECT * FROM %s WHERE julianday(logtime) BETWEEN julianday('%s') AND julianday('now')" % (table, string_from)
+	return json.dumps(query_db(querystring))
+
+def selectDateRange(table, 
+		year_from, month_from, day_from, hour_from, minute_from, second_from,
+		year_to, month_to, day_to, hour_to, minute_to, second_to):
+	string_from = "%s-%s-%s %s:%s:%s" % (year_from, month_from, day_from, hour_from, minute_from, second_from)
+	string_to = "%s-%s-%s %s:%s:%s" % (year_to, month_to, day_to, hour_to, minute_to, second_to)
+	querystring = "SELECT * FROM %s WHERE julianday(logtime) BETWEEN julianday('%s') AND julianday('%s')" % (table, string_from, string_to)
+	return json.dumps(query_db(querystring))
 
 @app.route('/')
 def hello():
@@ -56,16 +90,48 @@ def hello():
 #def hello_name(name):
 	#return "Hello {}!".format(name)
 
-@app.route('/spatial', methods = ['GET'])
-def api_hello():
-	mydata = selectSpatialDataChange_Range(0,0)
-	js = json.dumps(mydata)
+@app.route('/query', methods = ['POST'])
+def api_spatial_change():
+	if request.headers['Content-Type'] == 'application/json':
+		
+		table_exists = ('table' in request.json)
+		expression = (('year_from' in request.json) and ('month_from' in request.json) and ('day_from' in request.json) and ('hour_from' in request.json) and ('minute_from' in request.json) and ('second_from' in request.json))
+		expression2 = expression and (('year_to' in request.json) and ('month_to' in request.json) and ('day_to' in request.json) and ('hour_to' in request.json) and ('minute_to' in request.json) and ('second_to' in request.json))
+		ret = not_found()
 
-	resp = Response(js, status=200, mimetype='application/json')
-	resp.headers['Link'] = 'http://luisrei.com'
+		if table_exists and expression and expression2:
+			table = request.json['table']
+			year_from = request.json['year_from']
+			month_from = request.json['month_from']
+			day_from = request.json['day_from']
+			hour_from = request.json['hour_from']
+			minute_from = request.json['minute_from']
+			second_from = request.json['second_from']
 
-	return resp
+			year_to = request.json['year_to']
+			month_to = request.json['month_to']
+			day_to = request.json['day_to']
+			hour_to = request.json['hour_to']
+			minute_to = request.json['minute_to']
+			second_to = request.json['second_to']
+
+			ret = jsonify({table : selectDateRange(table, year_from, month_from, day_from, hour_from, minute_from, second_from, year_to, month_to, day_to, hour_to, minute_to, second_to)})
+		elif table_exists and expression and not expression2:
+			table = request.json['table']
+			year_from = request.json['year_from']
+			month_from = request.json['month_from']
+			day_from = request.json['day_from']
+			hour_from = request.json['hour_from']
+			minute_from = request.json['minute_from']
+			second_from = request.json['second_from']
+
+			ret = jsonify({table : selectUntilNow(table, year_from, month_from, day_from, hour_from, minute_from, second_from)})
+		else:
+			print("Invalid get parameters")
+		return ret
+	return "415 Unsupported Media Type ;)"
 
 #http://10.0.1.17:5000
 if __name__ == '__main__':
     app.run('10.0.1.17', 8001)
+

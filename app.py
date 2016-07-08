@@ -42,7 +42,8 @@ DATABASE = "/usr/data/test.db"
 def get_db():
 	db = getattr(g, '_database', None)
 	if db is None:
-		db = g._database = sqlite3.connect(DATABASE)
+		db = g._database = sqlite3.connect(DATABASE, detect_types=sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES)
+		db.row_factory = dict_factory
 	return db
 
 def query_db(query, args=(), one=False):
@@ -68,11 +69,33 @@ def not_found(error=None):
 
 	return resp
 
+def default(obj):
+	"""Default JSON serializer."""
+	import calendar, datetime
+
+	if isinstance(obj, datetime.datetime):
+		if obj.utcoffset() is not None:
+			obj = obj - obj.utcoffset()
+		millis = int(
+			calendar.timegm(obj.timetuple()) * 1000 +
+			obj.microsecond / 1000
+		)
+		return millis
+	raise TypeError('Not sure how to serialize %s' % (obj,))
+
+def dict_factory(cursor, row):
+	d = {}
+	for idx, col in enumerate(cursor.description):
+		d[col[0]] = row[idx]
+	return d
+
+
 def selectUntilNow(table, 
 		year_from, month_from, day_from, hour_from, minute_from, second_from):
 	string_from = "%s-%s-%s %s:%s:%s" % (year_from, month_from, day_from, hour_from, minute_from, second_from)
 	querystring = "SELECT * FROM %s WHERE julianday(logtime) BETWEEN julianday('%s') AND julianday('now')" % (table, string_from)
-	return json.dumps(query_db(querystring))
+	rows = query_db(querystring)
+	return json.dumps([dict(ix) for ix in rows], default=default)
 
 def selectDateRange(table, 
 		year_from, month_from, day_from, hour_from, minute_from, second_from,
@@ -80,7 +103,8 @@ def selectDateRange(table,
 	string_from = "%s-%s-%s %s:%s:%s" % (year_from, month_from, day_from, hour_from, minute_from, second_from)
 	string_to = "%s-%s-%s %s:%s:%s" % (year_to, month_to, day_to, hour_to, minute_to, second_to)
 	querystring = "SELECT * FROM %s WHERE julianday(logtime) BETWEEN julianday('%s') AND julianday('%s')" % (table, string_from, string_to)
-	return json.dumps(query_db(querystring))
+	rows = query_db(querystring)
+	return json.dumps([dict(ix) for ix in rows], default=default)
 
 @app.route('/')
 def hello():

@@ -115,7 +115,7 @@ def hello():
 	#return "Hello {}!".format(name)
 
 @app.route('/query', methods = ['POST'])
-def api_spatial_change():
+def api_query():
 	if request.headers['Content-Type'] == 'application/json':
 		
 		table_exists = ('table' in request.json)

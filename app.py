@@ -37,20 +37,20 @@ def make_json_app(import_name, **kwargs):
 #app = Flask(__name__)
 app = make_json_app(__name__)
 
-DATABASE = "/usr/data/test.db"
+databasepath = '/usr/data/phidgetdata.db'
 
 def get_db():
 	db = getattr(g, '_database', None)
 	if db is None:
-		db = g._database = sqlite3.connect(DATABASE, detect_types=sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES)
+		db = g._database = sqlite3.connect(databasepath)#, detect_types=sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES)
 		db.row_factory = dict_factory
 	return db
 
 def query_db(query, args=(), one=False):
-    cur = get_db().execute(query, args)
-    rv = cur.fetchall()
-    cur.close()
-    return (rv[0] if rv else None) if one else rv
+	cur = get_db().execute(query, args)
+	rv = cur.fetchall()
+	cur.close()
+	return (rv[0] if rv else None) if one else rv
 
 @app.teardown_appcontext
 def close_connection(exception):
@@ -90,18 +90,11 @@ def dict_factory(cursor, row):
 	return d
 
 
-def selectUntilNow(table, 
-		year_from, month_from, day_from, hour_from, minute_from, second_from):
-	string_from = "%s-%s-%s %s:%s:%s" % (year_from, month_from, day_from, hour_from, minute_from, second_from)
-	querystring = "SELECT * FROM %s WHERE julianday(logtime) BETWEEN julianday('%s') AND julianday('now')" % (table, string_from)
-	rows = query_db(querystring)
-	return json.dumps([dict(ix) for ix in rows], default=default)
-
 def selectDateRange(table, 
 		year_from, month_from, day_from, hour_from, minute_from, second_from,
 		year_to, month_to, day_to, hour_to, minute_to, second_to):
-	string_from = "%s-%s-%s %s:%s:%s" % (year_from, month_from, day_from, hour_from, minute_from, second_from)
-	string_to = "%s-%s-%s %s:%s:%s" % (year_to, month_to, day_to, hour_to, minute_to, second_to)
+	string_from = "%s-%s-%s %s:%s:%s" % (str(year_from), str(month_from), str(day_from),str(hour_from), str(minute_from), str(second_from))
+	string_to = "%s-%s-%s %s:%s:%s" % (str(year_to), str(month_to), str(day_to), str(hour_to), str(minute_to), str(second_to))
 	querystring = "SELECT * FROM %s WHERE julianday(logtime) BETWEEN julianday('%s') AND julianday('%s')" % (table, string_from, string_to)
 	rows = query_db(querystring)
 	return json.dumps([dict(ix) for ix in rows], default=default)
@@ -140,22 +133,11 @@ def api_query():
 			second_to = request.json['second_to']
 
 			ret = jsonify({table : selectDateRange(table, year_from, month_from, day_from, hour_from, minute_from, second_from, year_to, month_to, day_to, hour_to, minute_to, second_to)})
-		elif table_exists and expression and not expression2:
-			table = request.json['table']
-			year_from = request.json['year_from']
-			month_from = request.json['month_from']
-			day_from = request.json['day_from']
-			hour_from = request.json['hour_from']
-			minute_from = request.json['minute_from']
-			second_from = request.json['second_from']
-
-			ret = jsonify({table : selectUntilNow(table, year_from, month_from, day_from, hour_from, minute_from, second_from)})
 		else:
 			print("Invalid get parameters")
 		return ret
 	return "415 Unsupported Media Type ;)"
 
-#http://10.0.1.17:5000
 if __name__ == '__main__':
     app.run('10.0.1.17', 8001)
 

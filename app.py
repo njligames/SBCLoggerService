@@ -139,5 +139,5 @@ def api_query():
 	return "415 Unsupported Media Type ;)"
 
 if __name__ == '__main__':
-    app.run('10.0.1.17', 8001)
+    app.run('10.0.1.7', 8001)
 

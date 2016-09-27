@@ -7,6 +7,7 @@ import json
 from flask import Flask, jsonify, make_response
 from werkzeug.exceptions import default_exceptions
 from werkzeug.exceptions import HTTPException
+from datetime import datetime
 
 __all__ = ['make_json_app']
 
@@ -89,25 +90,24 @@ def dict_factory(cursor, row):
 		d[col[0]] = row[idx]
 	return d
 
+def selectAll(table):
+	querystring = "SELECT * FROM %s" %(table)
+	print("The Query String")
+	print(querystring)
+	return query_db(querystring)
 
 def selectDateRange(table, 
 		year_from, month_from, day_from, hour_from, minute_from, second_from,
 		year_to, month_to, day_to, hour_to, minute_to, second_to):
-	string_from = "%s-%s-%s %s:%s:%s" % (str(year_from), str(month_from), str(day_from),str(hour_from), str(minute_from), str(second_from))
-	string_to = "%s-%s-%s %s:%s:%s" % (str(year_to), str(month_to), str(day_to), str(hour_to), str(minute_to), str(second_to))
-	querystring = "SELECT * FROM %s WHERE julianday(logtime) BETWEEN julianday('%s') AND julianday('%s')" % (table, string_from, string_to)
+	string_from = '{:%Y-%m-%d %H:%M:%S}'.format(datetime(int(year_from), int(month_from), int(day_from), int(hour_from), int(minute_from), int(second_from)))
+	string_to = '{:%Y-%m-%d %H:%M:%S}'.format(datetime(int(year_to), int(month_to), int(day_to), int(hour_to), int(minute_to), int(second_to)))
+	string_format = '%%Y-%%m-%%d %%H:%%M:%%S'
+	#string_format = '%%%%Y-%%%%m-%%%%d %%%%H:%%%%M:%%%%S'
+	print(string_format)
+	querystring = "SELECT * FROM %s WHERE strftime('%%Y-%%m-%%d %%H:%%M:%%S', logtime) BETWEEN '%s' AND '%s'" % (table, string_from, string_to)
+	print("The Query String")
+	print(querystring)
 	return query_db(querystring)
-	#rows = query_db(querystring)
-	#return json.dumps([dict(ix) for ix in rows], default=default)
-
-def _selectDateRange(table, 
-		year_from, month_from, day_from, hour_from, minute_from, second_from,
-		year_to, month_to, day_to, hour_to, minute_to, second_to):
-	string_from = "%s-%s-%s %s:%s:%s" % (str(year_from), str(month_from), str(day_from),str(hour_from), str(minute_from), str(second_from))
-	string_to = "%s-%s-%s %s:%s:%s" % (str(year_to), str(month_to), str(day_to), str(hour_to), str(minute_to), str(second_to))
-	querystring = "SELECT * FROM %s WHERE julianday(logtime) BETWEEN julianday('%s') AND julianday('%s')" % (table, string_from, string_to)
-	rows = query_db(querystring)
-	return json.dumps([dict(ix) for ix in rows], default=default)
 
 @app.route('/')
 def hello():
@@ -124,6 +124,40 @@ def api_query():
 	expression = (('year_from' in request.json) and ('month_from' in request.json) and ('day_from' in request.json) and ('hour_from' in request.json) and ('minute_from' in request.json) and ('second_from' in request.json))
 	expression2 = expression and (('year_to' in request.json) and ('month_to' in request.json) and ('day_to' in request.json) and ('hour_to' in request.json) and ('minute_to' in request.json) and ('second_to' in request.json))
 
+	if table_exists and not(expression or expression2):
+		table = request.json['table']
+		if request.headers['Content-Type'] == 'application/json':
+			if request.headers['Accept'] == 'application/json':
+				rows = selectAll(table)
+				return jsonify({table : json.dumps([dict(ix) for ix in rows], default=default)})
+			elif request.headers['Accept'] == 'application/csv':
+				rows = selectAll(table)
+				_csv = ""
+				
+				keys = []
+				if(len(rows) > 0):
+					for column in rows[0].keys():
+						keys.append(column)
+
+					for key in keys:
+						_csv = _csv + key + ", "
+					_csv = _csv + "\n"
+
+					for ix in rows:
+						for key in keys:
+							_csv = _csv + str(dict(ix)[key]) + ", "
+						_csv = _csv + "\n"
+
+				response = make_response(_csv)
+				# This is the key: Set the right header for the response
+				# to be downloaded, instead of just printed on the browser
+				response.headers["Content-Disposition"] = "attachment; filename=sbc_log.csv"
+				response.headers["Content-Type"] = "application/csv"
+				return response
+			else:
+				return "415 Unsupported Media Type ;)"
+		else:
+			return "415 Unsupported Media Type ;)"
 	if table_exists and expression and expression2:
 		table = request.json['table']
 		year_from = request.json['year_from']
@@ -179,5 +213,6 @@ def api_query():
 	return not_found()
 
 if __name__ == '__main__':
+    #app.run(host='0.0.0.0', port=8001, debug=True)
     app.run(host='0.0.0.0', port=8001)
 

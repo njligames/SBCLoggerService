@@ -179,5 +179,5 @@ def api_query():
 	return not_found()
 
 if __name__ == '__main__':
-    app.run('10.0.1.7', 8001)
+    app.run(host='0.0.0.0', port=8001)
 
